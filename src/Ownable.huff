@@ -1,0 +1,137 @@
+/**
+* @title Ownable
+* @author Kuly14
+* @notice This contract was inspired by Huffmate Owned.sol
+* https://github.com/pentagonxyz/huffmate/blob/main/src/auth/Owned.huff
+* 
+* @notice that this contract has two step ownership transfer proccess 
+* which makes it impossible to transfer ownership to some random 
+* address because the new owner has to claim the ownership
+*/
+
+
+// Interface
+#define function owner() nonpayable returns(address)
+#define function transferOwnership(address) nonpayable returns()
+#define function claimOwnership() nonpayable returns()
+#define function isOwner() nonpayable returns()
+
+// Custom errors
+#define error notOwner()
+#define error notPending()
+
+// Events
+#define event OwnerUpdated(address indexed newOwner)
+#define event NewOwnerProposed(address indexed newOwner)
+
+// Storage
+#define constant OWNER = FREE_STORAGE_POINTER()
+#define constant PENDING_OWNER = FREE_STORAGE_POINTER()
+
+// Constructor
+#define macro CONSTRUCTOR() = takes(0) returns(0) {
+    caller          // [caller]
+    [OWNER]         // [OWNER_PTR, caller]
+    sstore          // []
+}
+
+// External function macros
+
+#define macro OWNER() = takes(0) returns(0) {
+    [OWNER]         // [OWNER_PTR]
+    sload           // [OWNER]
+    0x00            // [0x00, OWNER]
+    mstore          // []
+
+    0x20 0x00       // [0x00, 0x20]
+    return          // []
+}
+
+#define macro IS_OWNER() = takes(0) returns(0) {
+    caller          // [caller]
+    [OWNER]         // [OWNER_PTR, caller]
+    sload           // [OWNER, caller]
+    eq              // [OWNER == caller]
+    success         // [success] -> If succeeds it will jump to success and continut
+    jumpi
+
+    __ERROR(notOwner) // [error_selector]
+    0x00 mstore     // []
+    0x04 0x00       // [0x00, 0x04]
+    revert          // []
+
+    success:        // Jump destination
+    stop
+}
+
+#define macro TRANSFER_OWNERSHIP() = takes(0) returns(0) {
+    // Check if the caller is the owner
+    IS_OWNER()
+
+    // Load the new proposed address to the stack
+    0x04            // [calldata_ptr]
+    calldataload    // [newAddress]
+    dup1            // [newAddress, newAddress]
+
+    // Store the new proposed owner to storage
+    [PENDING_OWNER] // [PENDING_OWNER_PTR, newAddress, newAddress]
+    sstore          // [newAddress] -> Stores the pending owner to storage
+
+    // Emit the event
+    0x00 mstore     // []
+    __EVENT_HASH(NewOwnerProposed) // [eventHash]
+    0x20 0x00
+    log3
+}
+
+#define macro CLAIM_OWNERSHIP() = takes(0) returns(0) {
+    caller              // [caller]
+    [PENDING_OWNER]     // [PENDING_OWNER_PTR, caller]
+    sload               // [PENDING_OWNER, caller]
+    eq                  // [PENDING_OWNER == caller]
+    success             // [success]
+    jumpi               // []
+
+    __ERROR(notPending) // [error_sig]
+    0x00 mstore         // []
+    0x04 0x00           // [0x00, 0x04]
+    revert              // []
+
+    success:
+        caller          // [caller]
+        dup1            // [caller, caller]
+        [OWNER]         // [OWNER_PTR, caller, caller] 
+        sstore          // [caller]
+        0x00            // [0x00, caller]
+        [PENDING_OWNER] // [PENDING_OWNER_PTR, 0x00, caller]
+        sstore          // [caller]
+
+        0x00 mstore
+        __EVENT_HASH(OwnerUpdated)
+        0x20 0x00 
+        log3
+}
+
+#define macro MAIN() = takes(0) returns(0) {
+    0x00 calldataload 0xE0 shr
+
+    dup1 __FUNC_SIG(isOwner) eq isOwner jumpi
+    dup1 __FUNC_SIG(owner) eq owner jumpi
+    dup1 __FUNC_SIG(transferOwnership) eq transferOwnership jumpi
+    dup1 __FUNC_SIG(claimOwnership) eq claimOwnership jumpi
+
+    isOwner:
+        IS_OWNER()
+
+    owner:
+        OWNER()
+    
+    transferOwnership:
+        TRANSFER_OWNERSHIP()
+    
+    claimOwnership:
+        CLAIM_OWNERSHIP()
+
+    0x00 0x00
+    revert
+}
