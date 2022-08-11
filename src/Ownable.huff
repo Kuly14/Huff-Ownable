@@ -61,7 +61,6 @@
     revert          // []
 
     success:        // Jump destination
-    stop
 }
 
 #define macro TRANSFER_OWNERSHIP() = takes(0) returns(0) {
